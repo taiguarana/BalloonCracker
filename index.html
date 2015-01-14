@@ -1,0 +1,728 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+	<title>Coraz&oacute;n - Index</title>
+	<script type="text/javascript" src="js/caat/caat.js"></script>
+	<style>
+		body{ margin: 0 0 0 0; }
+	</style>
+</head>
+<body onresize="resize();">
+	<div id="container" align="center">
+        <img src="img/portada.jpg" style="border: 0px;" id="portada" />
+		<canvas id="mainCanvas" style="border: 1px solid #ffaaaa"></canvas>
+        <p id="temp" style="display: none;"></p>
+	</div>
+	<script>
+        // Constantes
+        var UNDEFINED = -1000;
+        var RED = 0, YELLOW = 1, GREEN = 2;
+
+        // Contadores
+        var pieceCounter = 0;
+        var i, j;
+        var loadPoints = 0; // Puntos a cargar (empieza con 0)
+
+        // Pantalla
+		var screenX = 760;	// Anchura de la pantalla de game (para face: 760x800 más o menos)
+		var screenY = window.innerHeight-200;	// Altura de la pantalla de game
+		var pSize = 70;		// Tamaño de las piezas del juego
+        var gameHeight = 100;   // Ajuste de la altura inicial del juego
+        var xMaxPiece = Math.floor(screenX/pSize);
+        var yMaxPiece = Math.floor((screenY-gameHeight)/pSize);
+        var displacementXY = [((screenX-(xMaxPiece*pSize))/2),gameHeight];
+        document.getElementById('portada').style.width = screenX+"px";
+
+        // Configuraciones del juego
+		var nPieces = 5;  // Numero de piezas existentes (imagenes)
+        var normalPoints = 10; // Puntos a ser multiplicado
+        var gameTime = 100; // Tiempo del juego en segundos
+
+        // Para el sistema
+        var intervalTimeCounter;    // Para el setInterval del tiempo
+        var gameOver = false;   // Habilitar juego o no
+        var director;
+        var scene;
+        var gameArray = new Array();   // Matriz para las piezas de matrizes
+        var actorsArray = new Array(); // Matriz para cada actor
+        var colorArray = new Array();  // Matriz de colores
+        var bgPuntos, bgLoading1, bgLoading2;
+        var puntosText, puntosNumber, vecesText, tiempoNumber, tiempoText;
+        var resized = false;
+
+        // Funcion para redimensionar la pantalla y los objetos (para mobiles)
+        function resize()
+        {
+            if(window.innerWidth < 1000)
+            {
+                document.getElementById('portada').style.width = window.innerWidth+"px";
+                screenX = window.innerWidth;
+                screenY = window.innerHeight-((200*screenX)/760);
+                gameHeight = Math.floor((100*screenX)/760)+10;
+                xMaxPiece = Math.floor(screenX/pSize);
+                yMaxPiece = Math.floor((screenY-gameHeight)/pSize);
+                displacementXY = [((screenX-(xMaxPiece*pSize))/2),gameHeight];
+            }
+            else
+            {
+                screenX = 760;
+                screenY = window.innerHeight-200;
+                document.getElementById('portada').style.width = screenX+"px";
+                gameHeight = Math.floor((100*screenX)/760)+10;
+                xMaxPiece = Math.floor(screenX/pSize);
+                yMaxPiece = Math.floor((screenY-gameHeight)/pSize);
+                displacementXY = [((screenX-(xMaxPiece*pSize))/2),gameHeight];
+            }
+            createSceneField();
+        }
+        resize();
+
+        // Numero aleatorio
+        function randomNumber(maxNumber, minNumber)
+        {
+            return Math.floor((Math.random()*maxNumber)+minNumber);
+        }
+ 
+        function createSceneField()
+        {
+            director = new CAAT.Director().initialize(screenX, screenY, document.getElementById('mainCanvas'));
+            scene = director.createScene();
+
+            // Creando matriz del tablero
+            //gameArray = Array(xMaxPiece);     // Matriz para las piezas de matrizes
+            //actorsArray = new Array(xMaxPiece);   // Matriz para cada actor
+            //colorArray = new Array(xMaxPiece);    // Matriz para poner color (saber cuales elementos son iguales)
+            for(i=0;i<xMaxPiece;i++)
+            {
+                gameArray[i] = new Array(yMaxPiece);
+                actorsArray[i] = new Array(yMaxPiece);
+                colorArray[i] = new Array(yMaxPiece);
+            }
+
+                // Cargando imagenes
+            new CAAT.ImagePreloader().loadImages(
+            [
+                {id:'title_img', url:'img/portada.png'},
+                {id:'p_00', url:'img/p_00.png'},
+                {id:'p_01', url:'img/p_01.png'},
+                {id:'p_02', url:'img/p_02.png'},
+                {id:'p_03', url:'img/p_03.png'},
+                {id:'p_04', url:'img/p_04.png'},
+                {id:'p_05', url:'img/p_05.png'}
+            ],
+            // Funcion para cargar y gestionar todas las piezas
+            function( counter, images ) {
+                if ( counter==images.length ) {             // when it is done loading
+                    director.setImagesCache(images);        // save loaded resources on Director.
+
+                    /*var title = new CAAT.Actor().
+                    setBackgroundImage(director.getImage('title_img')).
+                    setLocation(((60*screenX)/760),0).
+                    setScale((1.2*screenX)/760,screenX/760);
+                    scene.addChild(title);*/
+
+                    var lastPiece = null;
+                    var gameElements;
+                    for(i=0;i<xMaxPiece;i++)
+                        for(j=0;j<yMaxPiece;j++)
+                        {
+                            // Creacion de cada pieza
+                            gameElements = new CAAT.Actor().
+                            setBackgroundImage(director.getImage('p_00')).
+                            setLocation(i*pSize+displacementXY[0],j*pSize+displacementXY[1]);
+                            scene.addChild(gameElements);
+
+                            actorsArray[i][j] = gameElements;
+                            colorArray[i][j] = 0;
+
+                            // Evento para cuando el raton pasa arriba de las piezas
+                            gameElements.mouseEnter = function(mouseEvent)
+                            {
+                                if(!gameOver)
+                                {
+                                    this.parent.setZOrder(this,2);
+                                    document.body.style.cursor = "pointer";
+                                    this.addBehavior(
+                                        new CAAT.ScaleBehavior().
+                                        setFrameTime( this.time, 100 ).
+                                        setValues(1,1.5,1,1.5)
+                                        );
+                                }
+                                else
+                                    document.body.style.cursor = "default";
+                            };
+
+                            // Evento para cuando el raton sale de las piezas
+                            gameElements.mouseExit = function(mouseEvent)
+                            {
+                                if(!gameOver)
+                                {
+                                    document.body.style.cursor = "default";
+                                    this.parent.setZOrder(this,1);
+                                    this.addBehavior(
+                                        new CAAT.ScaleBehavior().
+                                        setFrameTime( this.time, 100 ).
+                                        setValues(1.5,1,1.5,1)
+                                        );
+                                    this.addBehavior(
+                                        new CAAT.AlphaBehavior().
+                                        setFrameTime( this.time, 100 ).
+                                        setValues(1,1).
+                                        setCycle(false)
+                                        );
+                                }
+                            };
+
+                            // Evento para cuando el raton pulsa sobre las piezas
+                            gameElements.mouseClick = function(mouseEvent)
+                            {
+                                var x = Math.floor((mouseEvent.screenPoint.x-displacementXY[0])/pSize);
+                                var y = Math.floor((mouseEvent.screenPoint.y-displacementXY[1])/pSize);
+
+                                if(!gameOver && gameArray[x][y])
+                                {
+                                    var sequenceFound = false;
+
+                                    this.parent.setZOrder(this,2);
+                                    this.addBehavior(
+                                        new CAAT.ScaleBehavior().
+                                        setFrameTime( this.time, 100 ).
+                                        setValues(1.5,1.3,1.5,1.3)
+                                        );
+                                    this.addBehavior(
+                                        new CAAT.AlphaBehavior().
+                                        setFrameTime( this.time, 100 ).
+                                        setValues(1,0.3).
+                                        setCycle(false)
+                                        );
+
+                                    findPieces(gameArray[x][y], x, y);
+                                    document.getElementById("temp").innerHTML = "";
+                                    if(pieceCounter > 2)
+                                    {
+                                        givePoints((pieceCounter-2), normalPoints);
+                                        killPieces();
+                                    }
+                                    else
+                                        document.getElementById("temp").innerHTML = "Selecci&oacute;n no v&aacute;lida!!!";
+                                    clearColorArray();
+                                }
+                            };
+                        }
+                }
+            });
+
+                // Elementos de la pantalla --------------------------------------
+                bgPuntos = new CAAT.ShapeActor().
+                setLocation(0,0).
+                setFillStyle('#eeeeee').
+                setShape(CAAT.ShapeActor.prototype.SHAPE_RECTANGLE).
+                setSize(screenX/2,((70*screenX)/760));
+                scene.addChild(bgPuntos);
+
+                puntosText = new CAAT.TextActor().
+                setFont(Math.round((40*screenX)/760)+"px sans-serif").
+                setText("Puntos: ").
+                setTextAlign("left").
+                setTextFillStyle("pink").
+                setOutline(true).
+                setLocation(Math.round((50*screenX)/760),Math.round((10*screenX)/760));
+                scene.addChild(puntosText);
+
+                puntosNumber = new CAAT.TextActor().
+                setFont(Math.round((40*screenX)/760)+"px sans-serif").
+                setText("0").
+                setTextAlign("right").
+                setTextFillStyle("pink").
+                setOutline(true).
+                setLocation(Math.round((300*screenX)/760),Math.round((10*screenX)/760));
+                scene.addChild(puntosNumber);
+
+                tiempoText = new CAAT.TextActor().
+                setFont(Math.round((40*screenX)/760)+"px sans-serif").
+                setText("Tiempo: ").
+                setTextAlign("left").
+                setTextFillStyle("pink").
+                setOutline(true).
+                setLocation(Math.round((500*screenX)/760),Math.round((10*screenX)/760));
+                scene.addChild(tiempoText);
+
+                tiempoNumber = new CAAT.TextActor().
+                setFont(Math.round((40*screenX)/760)+"px sans-serif").
+                setText(gameTime).
+                setTextAlign("right").
+                setTextFillStyle("pink").
+                setOutline(true).
+                setLocation(Math.round((710*screenX)/760),Math.round((10*screenX)/760));
+                scene.addChild(tiempoNumber);
+
+                bgLoading1 = new CAAT.ShapeActor().
+                setLocation(0,Math.round((70*screenX)/760)).
+                setFillStyle('#eee').
+                setShape(CAAT.ShapeActor.prototype.SHAPE_RECTANGLE).
+                setStrokeStyle('#999').
+                setSize(screenX,Math.round((30*screenX)/760));
+                scene.addChild(bgLoading1);
+
+                bgLoading2 = new CAAT.ShapeActor().
+                setLocation(1,Math.round((71*screenX)/760)).
+                setFillStyle('#f99').
+                setShape(CAAT.ShapeActor.prototype.SHAPE_RECTANGLE).
+                setSize(0,Math.floor((30*screenX)/760)-2);
+                scene.addChild(bgLoading2);
+
+                vecesText = new CAAT.TextActor().
+                setFont(Math.round((28*screenX)/760)+"px sans-serif").
+                setText("").
+                setTextAlign("left").
+                setTextFillStyle("white").
+                setLocation(Math.round((50*screenX)/760),Math.round((67*screenX)/760));
+                scene.addChild(vecesText);
+
+                if(resized)
+                    setTimeout(function(){newMatrix();},200);
+        }
+
+        // Funcion para generar una nueva matriz de juego
+        function newMatrix()
+        {
+            var velocity = 700;
+            var path1;
+            var cActor;
+
+            for(i=0;i<xMaxPiece;i++)
+                for(j=0;j<yMaxPiece;j++)
+                    gameArray[i][j] = randomNumber(nPieces, 1);
+
+            for(i=0;i<xMaxPiece;i++)
+                for(j=0;j<yMaxPiece;j++)
+                {
+                    path1 = new CAAT.LinearPath().
+                    setInitialPosition(i*pSize+displacementXY[0],displacementXY[1]-pSize).
+                    setFinalPosition(i*pSize+displacementXY[0],j*pSize+displacementXY[1]);
+                    
+                    cActor = actorsArray[i][j];
+                    cActor.setBackgroundImage(director.getImage('p_0'+gameArray[i][j]));
+                    //setLocation(i*pSize+displacementXY[0],j*pSize+displacementXY[1]);
+                    cActor.parent.setZOrder(cActor,0);
+                    cActor.addBehavior(
+                        new CAAT.PathBehavior().
+                            setPath(path1).
+                            setFrameTime(scene.time, velocity).
+                            setTranslation(cActor.width/2,cActor.height/2).
+                            setCycle(false)
+                        );
+                    cActor.addBehavior(
+                        new CAAT.ScaleBehavior().
+                            setValues(0,1,0,1,0.5,0.5).
+                            setInterpolator(new CAAT.Interpolator().createExponentialInOutInterpolator(5,false)).
+                            setFrameTime(scene.time,velocity)
+                        );
+                    cActor.addBehavior(
+                        new CAAT.AlphaBehavior().
+                            setFrameTime(scene.time,velocity).
+                            setValues(0,1).
+                            setCycle(false)
+                        );
+                }
+
+            findSequences();
+        }
+
+        // Funcion para cargar barra de puntos
+        function loadingPoints(points)
+        {
+            var newPoint = loadPoints+points;
+            if(newPoint > 758) 
+            {
+                newPoint = 758;
+                clearInterval(intervalTimeCounter);
+                pointsOver();
+            }
+            var behaviorLoad = new CAAT.ScaleBehavior().
+                setValues(((loadPoints*screenX)/758),((newPoint*screenX)/758),1,1,0,0).
+                setInterpolator(new CAAT.Interpolator().createExponentialOutInterpolator(5,false)).
+                setFrameTime(scene.time,2500);
+
+            var i = Math.round(loadPoints);
+            var interval = setInterval(function(){
+                if(i<=newPoint)
+                    puntosNumber.setText(i++);
+                else
+                    clearInterval(interval);
+            }, 1);
+
+            loadPoints = newPoint;
+            bgLoading2.setSize(1,Math.floor((28*screenX)/760)).addBehavior(behaviorLoad);
+        }
+
+        // Funcion para dar puntos y mostrar en numero de multiplicacion
+        function givePoints(times, points)
+        {
+            loadingPoints(points*times);
+            vecesText.setText("x"+times);
+        }
+
+        // Funcion para actualizar el tiempo
+        function startCount()
+        {
+            intervalTimeCounter = setInterval(function()
+            {
+                if(--gameTime > 0)
+                    tiempoNumber.setText(gameTime);
+                else
+                {
+                    tiempoNumber.setText("0");
+                    timeOver();
+                    clearInterval(intervalTimeCounter);
+                }
+            }, 1000);
+        }
+
+        // Funcion para dar empezar el juego
+        function startGame()
+        {
+            newMatrix();
+            resized = true;
+
+            var behaviortext = new CAAT.ScaleBehavior().
+                setValues(1,4,1,4).
+                setPingPong().
+                setInterpolator(new CAAT.Interpolator().createExponentialOutInterpolator(4,true)).
+                addListener({behaviorExpired: function(behavior,time,actor){startText.setText("");}}).
+                setFrameTime(scene.time,2000);
+
+            var startText = new CAAT.TextActor().
+                setFont(Math.floor((50*screenX)/760)+"px sans-serif").
+                setText("").
+                setTextAlign("center").
+                setTextFillStyle("blue").
+                setOutlineColor("#f00").
+                setOutline(true).
+                addListener({
+                    behaviorExpired : function(behavior, time, actor) {
+                        gameOver = false;
+                    }
+                }).
+                setLocation(screenX/2,(screenY-displacementXY[1])/2);
+            scene.addChild(startText);
+
+            startText.addBehavior(behaviortext);
+            startText.setText("Start!!!")
+
+            setTimeout(function(){startCount(); findSequences();},2000);
+        }
+
+        // Funcion para terminar el partido
+        function timeOver()
+        {
+            gameOver = true;
+            var behaviortext = new CAAT.ScaleBehavior().
+                setValues(1,3,1,4).
+                setPingPong().
+                setInterpolator(new CAAT.Interpolator().createExponentialOutInterpolator(4,true)).
+                //addListener({behaviorExpired: function(behavior,time,actor){endText.setText("");}}).
+                setFrameTime(scene.time,2000);
+
+            var endText = new CAAT.TextActor().
+                setFont(Math.floor((50*screenX)/760)+"px sans-serif").
+                setText("").
+                setTextAlign("center").
+                setTextFillStyle("blue").
+                setOutlineColor("#f00").
+                setOutline(true).
+                setLocation(screenX/2,(screenY-displacementXY[1])/2);
+            scene.addChild(endText);
+
+            endText.addBehavior(behaviortext);
+            endText.setText("Time Over!");
+            document.getElementById("temp").innerHTML = "<h3 style='color: #aa0000;'>Tu tiempo ha terminado!</h3>";
+        }
+
+        // Funcion para cuando llega a puntuacion maxima
+        function pointsOver()
+        {
+            gameOver = true;
+            var behaviortext = new CAAT.ScaleBehavior().
+                setValues(1,1.5,1,4).
+                setPingPong().
+                setInterpolator(new CAAT.Interpolator().createExponentialOutInterpolator(4,true)).
+                //addListener({behaviorExpired: function(behavior,time,actor){endText.setText("");}}).
+                setFrameTime(scene.time,2000);
+
+            var endText = new CAAT.TextActor().
+                setFont(Math.floor((50*screenX)/760)+"px sans-serif").
+                setText("").
+                setTextAlign("center").
+                setTextFillStyle("blue").
+                setOutlineColor("#f00").
+                setOutline(true).
+                setLocation(screenX/2,(screenY-displacementXY[1])/2);
+            scene.addChild(endText);
+
+            endText.addBehavior(behaviortext);
+            endText.setText("Max Point Achieved!!!");
+            document.getElementById("temp").innerHTML = "<h3 style='color: #00aa00;'>Enhorabuena!!! Has alcanzado la puntuacion maxima!!!</h3>";
+        }
+
+        // Funcion para reconocer secuencias iguales en el tablero
+        function findSequences()
+        {
+            var sequenceFound = false;
+            var x=0, y=0, w=0, z=0;
+            var result;
+
+            while(!sequenceFound && x < xMaxPiece)
+            {
+                while(!sequenceFound && y < yMaxPiece)
+                {
+                    findPieces(gameArray[x][y],x,y);
+                    
+                    if(pieceCounter > 2)
+                        sequenceFound = true;
+
+                    clearColorArray();
+                    y++;
+                }
+                y = 0;
+                x++;
+            }
+            if(!sequenceFound)
+            {
+                newMatrix();
+                document.getElementById("temp").innerHTML = "No hay m&aacute;s combinaciones posibles!";
+            }
+        }
+
+        // Encontrar por lo menos 3 piezas juntas (recursiva) (resultado viene en GREEN en el colorArray)
+        function findPieces(value, x, y)
+        {
+            if (x < xMaxPiece && x >= 0 && y < yMaxPiece && y >= 0)
+            {
+                if(colorArray[x][y] == RED)
+                {
+                    colorArray[x][y] = YELLOW; // visited
+                    if(gameArray[x][y] == value)
+                    {
+                        colorArray[x][y] = GREEN;
+                        pieceCounter++;
+                        findPieces(value, x, y-1); // TOP
+                        findPieces(value, x+1, y); // RIGHT
+                        findPieces(value, x, y+1); // DOWN
+                        findPieces(value, x-1, y); // LEFT
+                    }
+                }
+            }
+        }
+
+        // Funcion para borrar las piezas en secuencia
+        function killPieces()
+        {
+            var velocity = 100;
+            var currentActor;
+            var w, z;
+            gameOver = true;
+
+            for(w=0;w<xMaxPiece;w++)
+                for(z=0;z<yMaxPiece;z++)
+                    if(colorArray[w][z] == GREEN)
+                    {
+                        gameArray[w][z] = 0;
+                        currentActor = actorsArray[w][z];
+                        currentActor.parent.setZOrder(currentActor,1);
+                        currentActor.addBehavior(
+                        new CAAT.ScaleBehavior().
+                            setValues(1,0,1,0,0.5,0.5).
+                            setInterpolator(new CAAT.Interpolator().createExponentialInOutInterpolator(5,false)).
+                            setFrameTime(scene.time,velocity)
+                        );
+                        currentActor.addBehavior(
+                        new CAAT.AlphaBehavior().
+                            setFrameTime(scene.time,velocity).
+                            setValues(1,0).
+                            setCycle(false)
+                        );
+                    }
+            clearColorArray();
+
+            setTimeout(function() {dropPieces();},velocity+200);
+        }
+
+        // Funcion para que caigan las piezas nuevas
+        function dropPieces()
+        {
+            var x = 0;
+            var y = yMaxPiece-1;
+            var coordinatesY = new Array();
+            var k;
+            var blankCounter = 0;
+            var blankCrossed = false;
+            var needCross = true;
+            var stop = false;
+            var path1, path2;
+            var actorUp, actorDown;
+            var velocity = 100;
+            var temp1, temp2;
+
+            for(x=0;x<xMaxPiece;x++)
+            {
+                blankCounter = 0;
+                for(k=0;k<yMaxPiece;k++)
+                    if(gameArray[x][k] == 0)
+                        blankCounter++;
+
+                if(blankCounter!==0) {
+                    while(!stop)
+                    {
+                        for(y=yMaxPiece-1;y>=0;y--) // Encontrar el primero vacio y luego el siguiente no vacio
+                        {
+                            if(gameArray[x][y] == 0 && !blankCrossed && needCross)
+                            {
+                                coordinatesY[0] = y;
+                                blankCrossed = true;
+                            }
+                            else if(gameArray[x][y] !== 0 && blankCrossed && needCross)
+                            {
+                                coordinatesY[1] = y;
+                                needCross = false;
+                            }
+                            if(y == 0 && needCross)
+                                stop = true;
+                        }
+                        //alert(coordinatesY[0]+" / "+coordinatesY[1]);
+
+                        if(!stop) {
+                            path1 = new CAAT.LinearPath().
+                            setInitialPosition(x*pSize+displacementXY[0],coordinatesY[1]*pSize+displacementXY[1]).
+                            setFinalPosition(x*pSize+displacementXY[0],coordinatesY[0]*pSize+displacementXY[1]);
+                            path2 = new CAAT.LinearPath().
+                            setInitialPosition(x*pSize+displacementXY[0],coordinatesY[0]*pSize+displacementXY[1]).
+                            setFinalPosition(x*pSize+displacementXY[0],coordinatesY[1]*pSize+displacementXY[1]);
+
+                            actorUp = actorsArray[x][coordinatesY[1]];
+                            actorDown = actorsArray[x][coordinatesY[0]];
+
+                            actorUp.parent.setZOrder(actorUp,2);
+                            actorUp.addBehavior(
+                            new CAAT.PathBehavior().
+                                setPath(path1).
+                                setFrameTime(scene.time, velocity).
+                                setTranslation(actorUp.width/2,actorUp.height/2).
+                                setCycle(false)
+                            );
+                            actorDown.parent.setZOrder(actorDown,0);
+                            actorDown.addBehavior(
+                            new CAAT.PathBehavior().
+                                setPath(path2).
+                                setFrameTime(scene.time, velocity).
+                                setTranslation(actorDown.width/2,actorDown.height/2).
+                                setCycle(false)
+                            );
+
+                            // Cambio efectivo de piezas y actores en la matriz
+                            temp1 = gameArray[x][coordinatesY[0]];
+                            gameArray[x][coordinatesY[0]] = gameArray[x][coordinatesY[1]];
+                            gameArray[x][coordinatesY[1]] = temp1;
+                            temp2 = actorsArray[x][coordinatesY[0]];
+                            actorsArray[x][coordinatesY[0]] = actorsArray[x][coordinatesY[1]];
+                            actorsArray[x][coordinatesY[1]] = temp2;
+                        }
+
+                        blankCrossed = false;
+                        needCross = true;
+
+                        // Crear nuevas piezas
+                        if(stop) {
+                            for(y=0;y<=coordinatesY[0];y++)
+                            {
+                                gameArray[x][coordinatesY[0]-y] = randomNumber(nPieces, 1);
+
+                                //alert(x+","+(coordinatesY[0]-y));
+
+                                actorDown = actorsArray[x][coordinatesY[0]-y];
+
+                                path1 = new CAAT.LinearPath().
+                                setInitialPosition(x*pSize+displacementXY[0],displacementXY[1]-pSize).
+                                setFinalPosition(x*pSize+displacementXY[0],(coordinatesY[0]-y)*pSize+displacementXY[1]);
+
+                                actorDown.setBackgroundImage(director.getImage('p_0'+gameArray[x][coordinatesY[0]-y]));
+                                actorDown.parent.setZOrder(actorDown,0);
+                                actorDown.addBehavior(
+                                new CAAT.PathBehavior().
+                                    setPath(path1).
+                                    setFrameTime(scene.time, velocity).
+                                    setTranslation(actorDown.width/2,actorDown.height/2).
+                                    setCycle(false)
+                                );
+                                actorDown.addBehavior(
+                                new CAAT.ScaleBehavior().
+                                    setValues(0,1,0,1,0.5,0.5).
+                                    setInterpolator(new CAAT.Interpolator().createExponentialInOutInterpolator(5,false)).
+                                    setFrameTime(scene.time,velocity)
+                                );
+                                actorDown.addBehavior(
+                                new CAAT.AlphaBehavior().
+                                    setFrameTime(scene.time,velocity).
+                                    setValues(0,1).
+                                    setCycle(false)
+                                );
+                            }
+                        }
+                    }
+                    stop = false;
+                }
+            }
+            vecesText.addBehavior(
+            new CAAT.AlphaBehavior().
+                setFrameTime(scene.time,velocity-50).
+                setValues(1,1).
+                addListener({
+                    behaviorExpired : function(behavior, time, actor) {
+                        findSequences();
+                        if(loadPoints < 758)
+                            gameOver = false;
+                    }
+                }).
+                setCycle(false)
+            );
+            //setTimeout(function(){findSequences();},velocity+200);
+        }
+
+        // Funcion temporaria para mostrar la matriz de colores
+        function showColorArray()
+        {
+            var w, z;
+            var temp = document.getElementById("temp");
+            // print matriz
+            temp.innerHTML = "";
+            for(z=0;z<yMaxPiece;z++)
+                for(w=0;w<xMaxPiece;w++)
+                {
+                    temp.innerHTML += colorArray[w][z]+" ";
+                    if(w == xMaxPiece-1)
+                        temp.innerHTML += "<br>";
+                }
+        }
+
+        // Funcion para limpiar la matriz de colores
+        function clearColorArray()
+        {
+            var w, z;
+            for(w=0;w<xMaxPiece;w++)
+                for(z=0;z<yMaxPiece;z++)
+                    colorArray[w][z] = 0;
+            pieceCounter = 0;
+        }
+
+        // Start function
+        function initializeGame()
+        {
+            resize();
+            setTimeout(function(){startGame();},1000);
+        }
+        document.body.onload = initializeGame();
+
+    	CAAT.loop(60);
+	</script>
+</body>
+</html>
